@@ -2,6 +2,7 @@ import {
 	Component,
 	computed,
 	ElementRef,
+	Injectable,
 	signal,
 	viewChild,
 } from '@angular/core';
@@ -12,7 +13,6 @@ import {
 	MeshPhongMaterial,
 	PerspectiveCamera,
 	Scene,
-	Vector2,
 	WebGLRenderer,
 } from 'three';
 
@@ -31,6 +31,40 @@ const DEFAULT_FOV = 90;
 const NEAR_PLANE = 0.1;
 const FAR_PLANE = 1000;
 
+@Injectable()
+class MeshController {
+	private readonly meshes = signal<Mesh[]>([]);
+
+	addMesh(mesh: Mesh) {
+		console.info('Mesh added!');
+		this.meshes().push(mesh);
+	}
+
+	removeMesh(meshID: number) {
+		const meshIndex = this.meshes().findIndex(({ id }) => id === meshID);
+		if (meshIndex === -1) {
+			return null;
+		}
+		const removedMesh = this.meshes().splice(meshIndex, 1).at(0);
+		if (!removedMesh) {
+			console.warn("Mesh with given ID doesn't exist.");
+			return null;
+		}
+
+		removedMesh.dispose();
+		removedMesh.geometry.dispose();
+		return removedMesh;
+	}
+
+	getMesh(meshID: number) {
+		return this.meshes().find(({ id }) => meshID === id);
+	}
+
+	getMeshesNames() {
+		return this.meshes().flatMap(({ name, id }) => ({ id, name }));
+	}
+}
+
 @Component({
 	selector: 'app-root',
 	styleUrl: './app.css',
@@ -48,6 +82,8 @@ export class App {
 
 	private aspectRatio = computed(() => this.width() / this.height());
 
+	readonly meshController = new MeshController();
+
 	private planteerWorkspace =
 		viewChild<ElementRef<HTMLCanvasElement>>('planteerWorkspace');
 
@@ -59,6 +95,8 @@ export class App {
 		this.farPlane(),
 	);
 	private renderer: WebGLRenderer | null = null;
+
+	// Handling Window Resizing
 
 	updateCamera() {
 		this.camera.aspect = this.aspectRatio();
@@ -76,17 +114,19 @@ export class App {
 		this.renderer.setSize(this.width(), this.height(), false);
 	}
 
-	createRenderer(renderer: WebGLRenderer) {
-		this.renderer = renderer;
-		this.renderer.setPixelRatio(window.devicePixelRatio);
-	}
-
 	debouncedCheckWindowSize = debounce((_event: UIEvent) => {
 		this.width.set(window.innerWidth);
 		this.height.set(window.innerHeight);
 		this.updateCamera();
 		this.updateRenderer();
 	}, 125);
+
+	// Initialisation of the Three.js
+
+	createRenderer(renderer: WebGLRenderer) {
+		this.renderer = renderer;
+		this.renderer.setPixelRatio(window.devicePixelRatio);
+	}
 
 	ngAfterViewInit() {
 		const planteerWorkspace = this.planteerWorkspace()?.nativeElement;
@@ -104,6 +144,57 @@ export class App {
 		this.animate();
 	}
 
+	addCube() {
+		if (!this.renderer) {
+			console.warn('No renderer available');
+			return;
+		}
+
+		const boxWidth = 30;
+		const boxHeight = 30;
+		const boxDepth = 30;
+		const geometry = new BoxGeometry(boxWidth, boxHeight, boxDepth);
+
+		const emeraldColors = [
+			0x50c878, 0x046307, 0x2ecc71, 0x00a86b, 0x008f69, 0x3cb371, 0x01796f,
+			0x009b77, 0x228b22, 0x006a4e,
+		];
+
+		const randomElement = Math.floor(Math.random() * emeraldColors.length);
+		const randomColorIndex =
+			randomElement === emeraldColors.length
+				? randomElement - 1
+				: randomElement;
+
+		const material = new MeshPhongMaterial({
+			color: emeraldColors[randomColorIndex],
+		}); // greenish blue
+
+		const cube = new Mesh(geometry, material);
+		cube.position.x =
+			(Math.random() < 0.5 ? -1 : 1) * Math.ceil(Math.random() * 160) - 80;
+		cube.position.y = 0;
+		this.scene.add(cube);
+		this.meshController.addMesh(cube);
+	}
+
+	removeObject(objectID: number, type: 'Mesh') {
+		if (type === 'Mesh') {
+			const removedObject = this.meshController.removeMesh(objectID);
+			if (!removedObject) {
+				return;
+			}
+			this.scene.remove(removedObject);
+			this.updateCamera();
+			this.updateRenderer();
+		} else {
+			console.warn(`Unknown object type: ${String(type)}`);
+			return;
+		}
+	}
+
+	// THE Loop
+
 	animate() {
 		const renderer = this.renderer;
 		const camera = this.camera;
@@ -116,31 +207,15 @@ export class App {
 			light.position.set(-1, 2, 4);
 			scene.add(light);
 		}
-		const boxWidth = 300;
-		const boxHeight = 300;
-		const boxDepth = 300;
-		const geometry = new BoxGeometry(boxWidth, boxHeight, boxDepth);
 
-		const material = new MeshPhongMaterial({
-			color: 0xdd44ff,
-			transparent: true,
-			opacity: 0.5,
-		}); // greenish blue
+		camera.position.z = 200;
 
-		const cube = new Mesh(geometry, material);
-		scene.add(cube);
-
-		camera.position.z = 400;
-
-		function render(time: number) {
+		function render(_time: number) {
 			if (!renderer) {
 				return;
 			}
 
-			time *= 0.001;
-
-			cube.rotation.x = time;
-			cube.rotation.y = time;
+			_time *= 0.001;
 
 			renderer.render(scene, camera);
 			requestAnimationFrame(render);
@@ -148,6 +223,8 @@ export class App {
 
 		window.requestAnimationFrame(render);
 	}
+
+	// Clean-up
 
 	ngOnDestroy() {
 		this.scene.dispose();
