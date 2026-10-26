@@ -1,0 +1,16 @@
+<article class="flex flex-col gap-8">
+	<ul class="grid grid-cols-2 gap-4">
+		@for (entity of listPlanters(); track entity.id) {
+		<li class="flex flex-col gap-2 border border-stone-600 px-4 py-3.5">
+			<h3 class="text-sm text-stone-500">{{entity.type}}</h3>
+
+			<section>
+				<h2 class="leading-none font-medium text-stone-100">{{entity.name}}</h2>
+				<small class="text-sm text-stone-300">{{entity.description}}</small>
+			</section>
+		</li>
+		}
+	</ul>
+
+	<workspace-canvas></workspace-canvas>
+</article>
